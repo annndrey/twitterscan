@@ -1,0 +1,38 @@
+{% extends 'layout.html' %}
+{% block title %} Project Overview {% endblock %}
+{% block body %}
+<!-- OVERVOEW start -->
+      <div id="overview" class="my-3 p-3 bg-white rounded container">
+        <div class="row">
+          <div class="col-3 text-center">
+            <h2>{{ project.count_high }}</h2>
+            <span>High-priority profiles</span>
+            <br>
+	    {% if project.count_high > 0 %}
+              <a href="{{url_for('project_download', projectid=project.id, profiletype='high')}}"><small>Download</small></a>
+	    {% else %}
+	      <a class="btn disabled" href="#"><small>Download</small></a>
+	    {% endif %}
+          </div>
+          <div class="col-3 text-center">
+            <h2>{{ project.count_low }}</h2>
+            <span>Low-priority profiles</span>
+            <br>
+	    {% if project.count_low > 0 %}
+              <a href="{{url_for('project_download', projectid=project.id, profiletype='low')}}"><small>Download</small></a>
+	    {% else %}
+	      <a class="btn disabled" href="#"><small>Download</small></a>
+	    {% endif %}
+          </div>
+          <div class="col-3 text-center">
+            <h2>{{ project.count_unprocessed }}</h2>
+            <span>Profiles to process</span>
+          </div>
+          <div class="col-3 text-center">
+            <h2>{{ project.count_crawls }}</h2>
+            <span>Scheduled crawls</span>
+          </div>
+        </div>
+      </div>
+<!-- OVERVIEW end -->
+{% endblock %}

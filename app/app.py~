@@ -1,0 +1,472 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import datetime
+import time
+import io
+import csv
+import math
+import twitter
+from flask import Flask, render_template, flash, session, request, redirect, url_for, send_file, make_response
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from jinja2 import Markup
+from dateutil.relativedelta import relativedelta
+from flask_simplelogin import SimpleLogin, login_required
+
+from celery import Celery
+
+
+api = twitter.Api(consumer_key='qtKbnBHNX3a3cpimtOM5CJr30',
+                  consumer_secret='5w2GrdQwxhvk2QZM7Ff2D9iJPVB0jylfnCyopgT3kX4zRhCd7t',
+                  access_token_key='2757010550-ra3TbUvMUcTZY2WoUqWQxVjg1EFMZlf8whryWOk',
+                  access_token_secret='b9ngBX2gPELSZcvSFSKWcfJShejNZk8tk0kattbu9Vp7Y')
+
+
+# print(api.GetFollowers())
+# GetFollowerIDsPaged
+# print(api.GetFriends())
+# GetFriendIDsPaged(
+# https://python-twitter.readthedocs.io/en/latest/twitter.html
+# https://stackoverflow.com/questions/24038673/get-the-top-followed-followers-of-a-user-in-twitter-using-python-twitter
+# print(api.GetUser(screen_name='NASAVoyager').profile_banner_url)
+
+app = Flask(__name__)
+app.secret_key = 'Change it in production!'
+db_path = os.path.join(os.path.dirname(__file__), 'app.db')
+db_uri = 'sqlite:///{}'.format(db_path)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
+#app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
+#app.config['CELERY_BROKER_URL'] = 'amqp://gpstrack:gpstrack@localhost:5672/localhost'
+app.config['SIMPLELOGIN_USERNAME'] = 'user'
+app.config['SIMPLELOGIN_PASSWORD'] = 'pass'
+db = SQLAlchemy(app)
+migrate = Migrate(app, db) 
+SimpleLogin(app)
+
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+celery.conf.update(app.config)
+
+from models import Project, Settings, Profile
+
+
+@celery.task
+def profile_scan(profileid, settingsid):
+    # pip install redis
+    # pip install celery
+    # celery -A app.celery worker -C
+    # get max 200 users for every step
+    # filter every user and add it to db
+    # Twitter API limit is 15 requests in 15 minutes
+    # so doing 15 request then sleep 15.01 min
+    # and reprat until all users are fetched
+
+    # get all followers and friends and add them to the DB for further evaluating
+    profile = db.session.query(Profile).filter(Profile.id==profileid).first()
+    settings = db.session.query(Settings).filter(Settings.id==settingsid).first()
+    project = db.session.query(Project).filter(Project.id==profile.project_id).first()
+
+    ### FOLLOWING ###
+    print("RATE LIMIT", api.rate_limit)
+    API_LIMIT = 200.
+    fr_cursor = -1
+    fr_counter = 0
+    fr_added = 0
+    iter_following = int(math.ceil(profile.following/API_LIMIT))
+
+    for fr_ind in range(iter_following):
+        print("FOLLOWING cursor {}, counter {} following {}".format(fr_cursor, fr_counter, profile.following))
+        try:
+            print(" FOLLOWING GET API")
+            fr_cursor, fr_prev_cursor, following = api.GetFriendsPaged(user_id=profile.twitterid, screen_name=profile.twitterhandle, cursor=fr_cursor)
+        except twitter.error.TwitterError as e:
+            print("FOLLOWING SLEEP and get api")
+            print(e)
+            time.sleep(901)
+            fr_cursor, fr_prev_cursor, following = api.GetFriendsPaged(user_id=profile.twitterid, screen_name=profile.twitterhandle, cursor=fr_cursor)
+                
+        for fr in following:
+            fr_counter = fr_counter + 1
+            existingfr = db.session.query(Profile).filter(Profile.twitterhandle==fr.screen_name).filter(Profile.project_id==profile.project_id).first()   
+            if existingfr is None and filterprofile(fr, settings):
+                newfr = Profile(project_id=profile.project_id,
+                                             twitterhandle=fr.screen_name,
+                                             twitterid=fr.id,
+                                             #name=fr.name.split()[0],
+                                             #surname = fr.name.split()[-1],
+                                             fullname = fr.name,
+                                             bio = fr.description,
+                                             followers = fr.followers_count,
+                                             following = fr.friends_count,
+                                             created = datetime.datetime.strptime(fr.created_at, "%a %b %d %H:%M:%S %z %Y"),
+                                             location = fr.location,
+                                             link = fr.url,
+                                             picture = fr.profile_image_url)
+                db.session.add(newfr)
+                db.session.commit()
+                fr_added = fr_added + 1
+    
+    print("Scanned {} following profiles, added {}".format(fr_counter, fr_added), 'info')
+    ### FOLLOWERS ###
+    
+    fl_counter = 0
+    fl_added = 0
+    fl_cursor = -1
+    iter_followers = int(math.ceil(profile.following/API_LIMIT))
+    for fl in range(iter_followers):
+        print("FOLLOWERS cursor {}, counter {} followers {}".format(fl_cursor, fl_counter, profile.followers))
+        try:
+            print('FOLLOWERS GET API')
+            fl_cursor, fl_prev_cursor, followers = api.GetFollowersPaged(user_id=profile.twitterid, screen_name=profile.twitterhandle, cursor=fl_cursor)
+        except twitter.error.TwitterError as e:
+            print(e)
+            print('FOLLOWERS SLEEP AND GET API')
+            time.sleep(901)
+            fl_cursor, fl_prev_cursor, followers = api.GetFollowersPaged(user_id=profile.twitterid, screen_name=profile.twitterhandle, cursor=fl_cursor)
+            
+        for fl in followers:
+            existingfl = db.session.query(Profile).filter(Profile.twitterhandle==fl.screen_name).filter(Profile.project_id==profile.project_id).first()
+            fl_counter = fl_counter + 1
+    
+            if existingfl is None and filterprofile(fl, settings):
+                newfl = Profile(project_id=profile.project_id,
+                                             twitterhandle=fl.screen_name,
+                                             twitterid=fl.id,
+                                             #name=fl.name.split()[0],
+                                             #surname = fl.name.split()[-1],
+                                             fullname = fl.name,
+                                             bio = fl.description,
+                                             followers = fl.followers_count,
+                                             following = fl.friends_count,
+                                             created = datetime.datetime.strptime(fl.created_at, "%a %b %d %H:%M:%S %z %Y"),
+                                             location = fl.location,
+                                             link = fl.url,
+                                             picture = fl.profile_image_url)
+                db.session.add(newfl)
+                db.session.commit()
+                fl_added = fl_added + 1
+    print("Scanned {} followers profiles, added {}".format(fl_counter, fl_added), 'info')
+    print("SCANNED", project.scantasks)
+    project.scantasks = project.scantasks - 1
+    db.session.add(project)
+    db.session.commit()
+
+    return True
+
+@app.template_filter('marked')
+def mark_keywords(bio, kwds):
+    txt = bio
+    for kw in kwds.splitlines():
+        if txt is not None:
+            txt = txt.replace(kw, "<mark>{}</mark>".format(kw))
+    return Markup(txt)
+
+        
+@app.route('/')
+@login_required
+def index():
+    # select all projects
+    session['projectid'] = None
+    session['projectname'] = None
+    allprojects = db.session.query(Project).all()
+    return render_template('index.html', projects=allprojects)
+
+@app.route('/project-overview/<projectid>')
+@login_required
+def project_overview(projectid):
+    session['projectid'] = projectid
+    project = db.session.query(Project).filter(Project.id==projectid).first()
+    session['projectname'] = project.name
+
+    if project is not None:
+        return render_template('project-overview.html', project=project)
+    else:
+        return redirect(url_for('index'))
+
+@app.route('/download/<projectid>/<profiletype>')
+@login_required
+def project_download(projectid, profiletype):
+    if profiletype == 'high':
+        profiles = db.session.query(Profile).filter(Profile.project_id==projectid).filter(Profile.priority > 0).all()
+    elif profiletype == 'low':
+        profiles = db.session.query(Profile).filter(Profile.project_id==projectid).filter(Profile.priority < 0).all()
+    
+    si = io.StringIO()
+    outcsv = csv.writer(si, dialect='excel')
+    outcsv.writerow([column.name for column in Profile.__mapper__.columns])
+    for curr in profiles:
+        outcsv.writerow([getattr(curr, column.name) for column in Profile.__mapper__.columns])
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename={}priority.csv".format(profiletype)
+    output.headers["Content-type"] = "text/csv"
+    
+    return output
+
+    
+@app.route('/deleteproject/<projectid>')
+@login_required
+def project_delete(projectid):
+    project = db.session.query(Project).filter(Project.id==projectid).first()
+    if project is not None:
+        projectname = project.name
+        db.session.delete(project)
+        db.session.commit()
+        flash("Project {} deleted".format(projectname), category='success')
+    return redirect(url_for('index'))
+
+def filterprofile(profile, settings):
+    """At least one of the keywords must be in the twitter bio for the user to be included in the crawl results
+	- In the exclude fields:
+		- If the checkbox is ticked, then exclude profiles with empty bio
+		- Exclude profiles with fewer than [] followers
+		- Exclude profiles with less than [] tweets
+		- Exclude profiles with more than [] tweets per year.
+			- The formula: exclude if ([total tweets] / [months the profile is live] / 12) > []
+		- Exclude if last tweet is older than [] months
+		- Exclude profiles if they are based in one of the countries listed."""
+    
+    if settings.exclude is True and len(profile.description) == 0:
+        print("EMPTY BIO")
+        return False
+
+    if profile.description is None:
+        return False
+
+    if len(settings.include_keywords) > 1 and not any(kw in profile.description for kw in settings.include_keywords.splitlines()):
+        print("NO KEYWORDS")
+        return False
+
+    if profile.followers_count is None:
+        return False
+    
+    if profile.followers_count < settings.followers:
+        print("NUM FOLLOWERS")
+        return False
+
+    if any(loc in profile.location for loc in settings.fromcountries.splitlines()):
+        print("LOCATION")
+        return False
+
+    if profile.statuses_count < settings.tweets:
+        print("NUM TWEETS")
+        return False
+
+    created = datetime.datetime.strptime(profile.created_at, "%a %b %d %H:%M:%S %z %Y")
+    months = relativedelta(datetime.datetime.now(datetime.timezone.utc), created).years * 12
+    if months == 0:
+        if (profile.statuses_count / 12) > settings.tweetsperyear:
+            print("TWEETS PER YEAR")
+            return False
+    else:
+        if (profile.statuses_count / months / 12) > settings.tweetsperyear:
+            print("TWEETS PER YEAR")
+            return False
+
+    if profile.status is not None:
+        lasttweetdate = datetime.datetime.strptime(profile.status.created_at, "%a %b %d %H:%M:%S %z %Y").replace(tzinfo=None)
+    
+        lasttweetmonths = relativedelta(datetime.datetime.now(), lasttweetdate).years * 12
+        if lasttweetmonths > settings.notweetsfor:
+            print("LAST TWEET")
+            return False
+    else:
+        return False
+    # else
+    return True
+    
+@app.route('/add-profile/<projectid>', methods=['GET', 'POST'])
+@login_required
+def add_profile(projectid):
+    if request.method == 'POST':
+
+        project = db.session.query(Project).filter(Project.id==projectid).first()
+        if project is not None:
+            settings = project.settings
+            newhandles = request.form.get('twitterhandles')
+            handlescounter = 0
+            allhandles = 0
+
+            
+            for handle in newhandles.splitlines():
+                allhandles = allhandles + 1
+                existing = db.session.query(Profile).filter(Profile.twitterhandle==handle).filter(Profile.project_id==projectid).first()
+                twuser = None
+                try:
+                    twuser = api.GetUser(screen_name=handle)
+                except twitter.error.TwitterError as e:
+                    flash("There's no such account in Twitter, {} ".format(handle), category='warning')
+
+                # get twitter id
+                if existing is None and twuser is not None:
+                    # FILTERS
+                    #if filterprofile(twuser, settings):
+                    print(twuser.created_at)
+                    newprofile = Profile(project_id=projectid,
+                                         twitterhandle=handle,
+                                         twitterid=twuser.id,
+                                         name=twuser.name.split()[0],
+                                         surname = twuser.name.split()[-1],
+                                         fullname = twuser.name,
+                                         bio = twuser.description,
+                                         followers = twuser.followers_count,
+                                         following = twuser.friends_count,
+                                         created = datetime.datetime.strptime(twuser.created_at, "%a %b %d %H:%M:%S %z %Y"),
+                                         location = twuser.location,
+                                         link = twuser.url,
+                                         picture = twuser.profile_image_url)
+                    handlescounter = handlescounter + 1
+                
+                    db.session.add(newprofile)
+                    db.session.commit()
+
+            dismissed = allhandles - handlescounter
+            flash('Added {} new profile(s), {} dismissed'.format(handlescounter, dismissed), category='info')
+
+            return redirect(url_for('project_overview', projectid=projectid))
+        
+    return render_template('add-profile.html')
+
+@app.route('/evaluation/<projectid>')
+@login_required
+def evaluation(projectid):
+    # lastprofiles = db.session.query(Profile).filter(Profile.project_id == projectid).filter(Profile.processed == False).filter(Profile.priority == 0).order_by(Profile.id).limit(10).all()
+    lastprofiles = db.session.query(Profile).filter(Profile.project_id == projectid).filter(Profile.priority == 0).filter(Profile.archived == 0).order_by(Profile.id).limit(10).all()
+    project = db.session.query(Project).filter(Project.id==projectid).first()
+
+    # sort last 10
+    # select profiles where priority = 0 and processed = False and project_id = current project id
+    # sorted by id ascending first 10
+    if project is not None:
+        return render_template('evaluation.html', profiles = lastprofiles, project = project, settings=project.settings)
+    else:
+        return redirect(url_for('index'))
+        
+@app.route('/evaluate/<projectid>/profile/<profileid>/<action>')
+@login_required
+def evaluate_profile(projectid, profileid, action):
+    profile = db.session.query(Profile).filter(Profile.project_id==projectid).filter(Profile.id==profileid).first()
+    settings = db.session.query(Settings).filter(Settings.project_id==projectid).first()
+    project = db.session.query(Project).filter(Project.id==projectid).first()
+    if profile is not None:
+        if action == 'scan':
+            flash("Profile @{} is scheduled for scan".format(profile.twitterhandle), category='success')
+            # start celery task here
+
+            profile.processed = True
+            db.session.add(profile)
+            db.session.commit()
+            project.scantasks = project.scantasks + 1
+            db.session.add(project)
+            db.session.commit()
+            
+            task = profile_scan.delay(profile.id, settings.id)
+            
+        elif action == 'up':
+            profile.priority = 1
+            profile.processed = True
+            db.session.add(profile)
+            db.session.commit()
+            flash("Profile @{} priority increased".format(profile.twitterhandle), category='success')
+
+        elif action == 'down':
+            profile.priority = -1
+            profile.processed = True
+            db.session.add(profile)
+            db.session.commit()
+            flash("Profile @{} priority decreased".format(profile.twitterhandle), category='success')
+
+        elif action == 'delete':
+            profile.priority = 0
+            profile.name = None
+            profile.surname = None
+            profile.fullname = None
+            profile.bio = None
+            profile.followers = None
+            profile.following = None
+            profile.created = None
+            profile.location = None
+            profile.link = None
+            profile.picture = None
+            profile.processed = True
+            profile.archived = True
+            db.session.add(profile)
+            db.session.commit()
+            flash("Profile @{} marked as archieved".format(profile.twitterhandle), category='success')
+
+    # scan # celery
+    # priority up # change status
+    # priority down # change status
+    # archive # change status
+    # flash message 
+
+    return redirect(url_for('evaluation', projectid=projectid))
+
+@app.route('/parameters/<projectid>', methods=['GET', 'POST'])
+@login_required
+def parameters(projectid):
+    if request.method == 'POST':
+        project = db.session.query(Project).filter(Project.id==projectid).first()
+        settings = db.session.query(Settings).filter(Settings.project_id==projectid).first()
+
+        project.name = request.form.get('projectname', 'New project')
+
+        db.session.add(project)
+        db.session.commit()
+
+        settings.include_keywords = request.form.get('keywords', None)
+        settings.followers = request.form.get('followers', None)
+        settings.tweetslimit = request.form.get('tweetslimit', None)
+        settings.tweetsperyear = request.form.get('tweetsperyear', None)
+        settings.notweetsfor = request.form.get('notweetsfor', None)
+        settings.fromcountries = request.form.get('location', None)
+        settings.exclude = request.form.get('exclude', False)
+        
+        db.session.add(settings)
+        db.session.commit()
+
+        flash('New settings saved', category='success')
+        
+        return redirect(url_for('project_overview', projectid=projectid))
+    
+    settings = db.session.query(Settings).filter(Settings.project_id == projectid).first()
+    return render_template('parameters.html', s=settings, action='edit')
+
+@app.route('/newproject', methods=['GET', 'POST'])
+@login_required
+def create_project():
+    if request.method == 'POST':
+        newname = request.form.get('projectname', 'New project')
+        newkeywords = request.form.get('keywords', None)
+        newfollowers = request.form.get('followers', None)
+        newtweetslimit = request.form.get('tweetslimit', None)
+        newtweetsperyear = request.form.get('tweetsperyear', None)
+        newnotweetsfor = request.form.get('notweetsfor', None)
+        newlocation = request.form.get('location', None)
+        newexclude = request.form.get('exclude', False)
+        
+        newproject = Project(name=newname)
+        db.session.add(newproject)
+        db.session.commit()
+        newsettings = Settings(project_id=newproject.id,
+                               include_keywords = newkeywords,
+                               exclude=newexclude,
+                               followers=newfollowers,
+                               tweets=newtweetslimit,
+                               tweetsperyear=newtweetsperyear,
+                               notweetsfor=newnotweetsfor,
+                               fromcountries=newlocation)
+        db.session.add(newsettings)
+        db.session.commit()
+
+        flash('New project created', category='success')
+        
+        return redirect(url_for('index'))
+    else:
+        return render_template('parameters.html', action='new')
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

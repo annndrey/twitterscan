@@ -1,0 +1,66 @@
+== Project list
+	Lists all projects
+	Functionality:
+	- "Delete" button triggers a secondary dialog (modal) and if the user presses "yes, delete", the project is deleted
+	- "Create new project" creates a new project with a default name "New project" and the "Parameters" screen is opened
+
+== Overview
+	Show top line information of the project
+	Functionality:
+	- Download a csv file with high-priority profiles
+	- Download a csv file with low-priority profiles
+
+== Add profile
+	Allows the user the add new twitter handles
+	Functionality:
+	- Once the enters user handles (with no "@" sign) and presses the "Add users" button, the system:
+		- gets the IDs for the handles from the Twitter API
+		- checks if these IDs are in the system
+			- those that are not in the system, are checked against the filter (from the project's Parameters) and if passed added in front of the evaluation queue
+			- those that are in the sytem or can't be found in Twitter are ignored
+
+== Evluation mode
+	Allows the user to evaluate individual twitter handles. Display maxium 10 handles. Once one is evaluated (and dissapears) another one appears at the bottom. The words from the "Parameters" filter is highlighted in green.
+	Functionality:
+	- Scan.
+		- Get the IDs of all users the profile follows and is followed by
+		- De-dupe the list
+		- Exclude the users whose IDs are found in the our DB
+		- Filter the user as per the filter (based on the varibles from the "parameters" page) (the excluded IDs don't need to be saved in the database)
+		- For those IDs that are left add them to the queue to save the following information:
+			- Twitter unique ID
+			- Handle name
+			- Bio desccription
+			- Followers
+			- Following
+			- Date created (month, year)
+			- Location
+			- Link
+			- Picture. If picture can be hot-linked, just link hot-link to it. If hot-linking is not an option - save the image and once the account has been evaluation - delete the picture.
+		- The new profiles are added at the end of the profiles that are to be evaluated.
+		- The queuing system needs to run in a way so that the API calls are under the Twitter API limit.
+	- Priority up.
+		- Mark the handle as high priority
+		- Show the success message
+		- Hide the handle from the Evaluation mode
+	- Priority down.
+		- Mark the handle as low priority
+		- Show the success message
+		- Hide the handle from the evaluation mode
+	- Archive.
+		- Mark the handle as archived (remove all the information from the data base (including the image) and leave only the ID for future checks)
+		- Show the success message
+		- Hide the handle from the evaluation mode
+
+== Parameters
+	Allows users to change the project name and adjust the filters
+	- In project name field user can change the name of the project
+	- In the include text field user adds a keywords per line. At least one of the keywords must be in the twitter bio for the user to be included in the crawl results
+	- In the exclude fields:
+		- If the checkbox is ticked, then exclude profiles with empty bio
+		- Exclude profiles with fewer than [] followers
+		- Exclude profiles with less than [] tweets
+		- Exclude profiles with more than [] tweets per year.
+			- The formula: exclude if ([total tweets] / [months the profile is live] / 12) > []
+		- Exclude if last tweet is older than [] months
+		- Exclude profiles if they are based in one of the countries listed.

@@ -1,0 +1,17 @@
+{% extends 'layout.html' %}
+{% block title %} Add Profile {% endblock %}
+{% block body %}
+<!-- ADD PROFILE start -->
+      <div id="add-users-box" class="my-3 p-3 bg-white rounded container">
+        <p class="row ml-1"><small>Add twitter handles (one per line and without "@" sign).</small></p>
+        <form class="row" action="{{ url_for('add_profile', projectid=session['projectid']) }}" method="POST">
+          <div class="col-9">
+            <textarea class="form-control" id="exampleFormControlTextarea1" name="twitterhandles" rows="6"></textarea>
+          </div>
+          <div class="col-3">
+            <button type="submit" class="btn btn-info mb-2">Add Profile(s)</button>
+          </div>
+        </form>
+      </div>
+<!-- ADD PROFILE end -->
+{% endblock %}

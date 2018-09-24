@@ -1,0 +1,50 @@
+{% extends 'layout.html' %}
+{% block title %} Evaluation {% endblock %}
+{% block body %}
+  <!-- EVALUATION MODE start -->
+  <div id="evaluation-box" class="my-3 p-3 bg-white rounded container">
+    {% for p in profiles %}
+      <div class="card-group mb-3">
+	<div class="card col-pic">
+          <ul class="list-group">
+            <li class="list-group-item">
+              <a href="https://twitter.com/{{p.twitterhandle}}" target="_blank">
+		<img src="{{p.picture_large}}" />
+              </a>
+            </li> <!-- Twitter pic with a link to the twitter profile -->
+          </ul>
+	</div>
+	<div class="card col-description">
+          <ul class="list-group">
+            <li class="list-group-item col-name pb-0"><a href="https://twitter.com/{{p.twitterhandle}}" target="_blank"><strong>{{loop.index}}. {{p.fullname}}</strong></a></li> <!-- Twitter name with a link to the twitter profile -->
+            <li class="list-group-item pb-0"><strong>{{p.followers}}</strong> ({{p.following}}) <span class="info-secondary">{{p.location}} ({{p.years_created}} years)</span></li> <!-- Number of followers (number of following) | Country (Age of the account in years) -->
+            <li class="list-group-item"> {{p.bio | marked(settings.include_keywords)}} | Link: <a href="{{p.link}}" target="_blank">{{p.link}}</a></li>
+          </ul>
+	</div>
+	
+	<div class="card col-crawl">
+          <a href="{{ url_for('evaluate_profile', projectid=project.id, profileid=p.id, action='scan') }}" role="button" class="btn btn-info">
+            <img class="svg-inline--fa" src="/static/icons/magnet-solid.svg" />
+          </a> <!-- Button to add to crawling the followers & Following -->
+	</div>
+	<div class="card col-priority">
+          <div class="btn-group-vertical">
+            <a href="{{ url_for('evaluate_profile', projectid=project.id, profileid=p.id, action='up') }}" role="button" class="btn btn-secondary mb-2">
+              <img class="svg-inline--fa" src="/static/icons/arrow-up-solid.svg" />
+            </a> <!-- Button to prioritise -->
+            <a href="{{ url_for('evaluate_profile', projectid=project.id, profileid=p.id, action='down') }}" role="button" class="btn btn-secondary">
+              <img class="svg-inline--fa" src="/static/icons/arrow-down-solid.svg" />
+            </a> <!-- Button to de-preriotise -->
+          </div>
+	</div>
+	<div class="card col-delete">
+          <a href="{{ url_for('evaluate_profile', projectid=project.id, profileid=p.id, action='delete') }}" role="button" class="btn btn-danger">
+            <img class="svg-inline--fa" src="/static/icons/times-solid.svg" />
+          </a> <!-- Archive -->
+	</div>
+      </div>
+    {% endfor %}
+    <p class="text-center mb-0"><small>{{project.count_unprocessed - 10 if project.count_unprocessed > 10 else 0 }} to go</small></p> <!-- Number of Twitter handles to go through -->
+  </div>
+<!-- EVALUATION MODE end-->
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends 'layout.html' %}
+{% block title %} Parameters {% endblock %}
+{% block body %}
+<!-- PARAMETERS start -->
+<div id="parameters-box" class="my-3 p-3 bg-white rounded container">
+  {% if action == 'new' %}
+    <form class="row" action={{ url_for('create_project') }} method="POST">
+  {% elif action == 'edit' %}
+    <form class="row" action={{ url_for('parameters', projectid=session['projectid']) }} method="POST">
+  {% endif %}
+
+  <div class="col-12">
+      <div class="form-group">
+        <label for="project-name">
+          <small>Project name:</small>
+        </label>
+        <input type="text" class="from-control" id="project-name" name="projectname" value="{{ s.project.name if s else 'Project name' }}">
+      </div>
+    </div>
+    <div class="include-box col-5 mr-4">
+      <h6>Include</h6>
+      <div class="form-group">
+        <label for="keyword-to-include"><small>Keywords to include (one by line):</small></label>
+        <textarea class="form-control" id="keyword-to-include" name="keywords" rows="15">{{s.include_keywords if s else ''}}</textarea>
+      </div>
+    </div>
+    <div class="exclude-box col-5 mr-4">
+      <h6>Exclude</h6>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" value="" id="empty-bio-check" name="emptybio" {{ 'checked="checked"' if s and s.exclude == true else 'checked="checked"'}}>
+        <label class="form-check-label" for="defaultCheck1">
+          <small>Accounts with <strong>empty</strong> bio</small>
+        </label>
+      </div>
+      <div class="form-group">
+        <label for="follower-check">
+          <small>With <strong>fewer</strong> than (followers):</small>
+        </label>
+        <input type="text" class="from-control" id="follower-check" name="followers" value="{{s.followers if s else 100}}">
+      </div>
+      <div class="form-group">
+        <label for="tweet-limit-check">
+          <small>With <strong>fewer</strong> than (tweets):</small>
+        </label>
+        <input type="text" class="from-control" id="tweet-limit-check" name="tweetslimit" value="{{s.tweets if s else 20}}">
+      </div>
+      <div class="form-group">
+        <label for="tweets-per-year-check">
+          <small>With <strong>more</strong> than (tweets per year):</small>
+        </label>
+        <input type="text" class="from-control" id="tweets-per-year-check" name="tweetsperyear" value="{{s.tweetsperyear if s else 4000}}">
+      </div>
+      <div class="form-group">
+        <label for="tweet-inactivity-check">
+          <small>With <strong>no</strong> tweets in the past (months):</small>
+        </label>
+        <input type="text" class="from-control" id="tweet-inactivity-check" name="notweetsfor" value="{{s.notweetsfor if s else 3}}">
+      </div>
+      <div class="form-group">
+        <label for="location-check">
+          <small>From countries (one by line):</small>
+        </label>
+        <textarea class="form-control" id="location-check" name="location" rows="6">{{s.fromcountries if s else ''}}</textarea>
+      </div>
+    </div>
+    <br>
+    <div class="submit-box col-1">
+      <button type="submit" class="btn btn-info">Save</button>
+    </div>
+  </form>
+</div>
+<!-- PARAMETERS end -->
+{% endblock %}

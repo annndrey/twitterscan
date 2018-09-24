@@ -1,0 +1,12 @@
+{% if session['projectid'] %}
+  <div class="bg-white box-shadow">
+    <div class="container d-flex justify-content-between">
+      <nav class="nav nav-underline">
+        <a class="nav-link active" href="/project-overview/{{session['projectid']}}">Overview</a>
+        <a class="nav-link" href="/add-profile/{{session['projectid']}}">+Add profile</a>
+        <a class="nav-link" href="/evaluation/{{session['projectid']}}">Evaluation mode</a>
+      </nav>
+      <a class="nav-link" href="/parameters/{{session['projectid']}}">Parameters</a>
+    </div>
+  </div>
+{% endif %}

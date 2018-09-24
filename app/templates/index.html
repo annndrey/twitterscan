@@ -1,0 +1,65 @@
+{% extends 'layout.html' %}
+{% block title %} Twitter Bot {% endblock %}
+{% block body %}
+  <!-- PROJECT LIST start -->
+  <div id="project-list" class="my-3 p-3 bg-white rounded container">
+    <div class="row align-items-center">
+      <table class="table table-striped mr-3 ml-3">
+        <thead>
+          <tr>
+            <th scope="col-2"></th>
+            <th scope="col-2" class="text-center"><small>High-priority profiles</small></th>
+            <th scope="col-2" class="text-center"><small>Low-priority profiles</small></th>
+            <th scope="col-2" class="text-center"><small>Profiles to process</small></th>
+            <th scope="col-2" class="text-center"><small>Scheduled crawls</small></th>
+            <th scope="col-2" class="text-center"><small>Action</small></th>
+          </tr>
+        </thead>
+        <tbody>
+	  {% for p in projects %}
+            <tr>
+              <th scope="row"><h6><a href="/project-overview/{{p.id}}">{{ p.name }}</a></h6></th>
+              <td class="text-center">
+		<h6>{{ p.count_high }}</h6></td>
+              <td class="text-center">
+		<h6>{{ p.count_low }}</h6></td>
+              <td class="text-center">
+		<h6>{{ p.count_unprocessed }}</h6></td>
+              <td class="text-center">
+		<h6>{{ p.count_crawls }}</h6></td>
+              <td class="text-center"><a href="#" class="text-danger" data-toggle="modal" data-target="#confirm-delete{{p.id}}"><small>Delete</small></a></td>
+            </tr>
+	  {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="row d-flex justify-content-center">
+      <a href="{{ url_for('create_project') }}" role="button" class="btn btn-info">Create new project</a>
+    </div>
+
+  </div>
+  
+  {% for p in projects %}
+    <div class="modal fade" id="confirm-delete{{p.id}}" tabindex="-1" role="dialog" aria-labelledby="confirm-delete{{p.id}}" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+	<div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="confirm-delete-label">Confirm Delete</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            By pressing "delete" you'll delete the project and database.
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+	    <a href="{{url_for('project_delete', projectid=p.id)}}" class="btn btn-danger">Yes, delete</a>
+          </div>
+	</div>
+      </div>
+    </div>
+  {% endfor %}
+  <!-- PROJECT LIST end -->
+{% endblock %}
